@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd ">
+    <http:listener-config name="hr-sapi-httpListenerConfig">
+        <http:listener-connection host="0.0.0.0" port="8081" />
+    </http:listener-config>
+    <apikit:config name="hr-sapi-config" api="hr-sapi.raml" outboundHeadersMapName="outboundHeaders" httpStatusVarName="httpStatus" />
+    <http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="a699a048-2795-49ca-ae40-b2b3a1507995">
+        <http:listener-connection host="${http.host}" port="${http.port}" />
+    </http:listener-config>
+    <http:request-config name="HTTP_hrSystem_configuration" doc:name="HTTP Request configuration" doc:id="edad75d7-68b4-4532-a78f-1285da914224" basePath="/${hr.basePath}">
+        <http:request-connection host="${hr.host}" port="${hr.port}" />
+    </http:request-config>
+    <flow name="hr-sapi-main">
+        <http:listener config-ref="HTTP_Listener_config" path="${http.path}/*" allowedMethods="GET,POST,PATCH,DELETE">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body><![CDATA[#[payload]]]></http:body>
+                <http:headers><![CDATA[#[vars.outboundHeaders default {}]]]></http:headers>
+            </http:error-response>
+        </http:listener>
+        <logger level="INFO" doc:name="Logger" doc:id="21e6b427-90d9-452b-b4e3-1ac80d6473d8" message="Message received in Hr-sapi with correlationId #[correlationId]" />
+        <apikit:router config-ref="hr-sapi-config" />
+        <error-handler ref="errorHandlerError_Handler" />
+    </flow>
+    <flow name="hr-sapi-console">
+        <http:listener config-ref="hr-sapi-httpListenerConfig" path="/console/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:console config-ref="hr-sapi-config" />
+        <error-handler>
+            <on-error-propagate type="APIKIT:NOT_FOUND">
+                <ee:transform>
+                    <ee:message>
+                        <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{message: "Resource not found"}]]></ee:set-payload>
+                    </ee:message>
+                    <ee:variables>
+                        <ee:set-variable variableName="httpStatus">404</ee:set-variable>
+                    </ee:variables>
+                </ee:transform>
+            </on-error-propagate>
+        </error-handler>
+    </flow>
+    <flow name="delete:\staff\(empId):hr-sapi-config">
+        <ee:transform>
+            <ee:variables>
+                <ee:set-variable variableName="empId">attributes.uriParams.'empId'</ee:set-variable>
+            </ee:variables>
+        </ee:transform>
+        <http:request method="DELETE" doc:name="Request" doc:id="cb688806-fbb5-43e6-9cd2-1659f84d852a" config-ref="HTTP_hrSystem_configuration" path="${hr.path}/{empId}" sendCorrelationId="ALWAYS" correlationId="#[correlationId]">
+            <http:headers><![CDATA[#[output application/json
+---
+{
+	"role":attributes.headers.role
+}]]]></http:headers>
+            <http:uri-params><![CDATA[#[output application/json
+---
+{
+	"empId": vars.empId
+}]]]></http:uri-params>
+        </http:request>
+        <ee:transform>
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "record deteled successfully": null
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+    <flow name="patch:\staff\(empId):application\json:hr-sapi-config">
+        <ee:transform>
+            <ee:variables>
+                <ee:set-variable variableName="empId">attributes.uriParams.'empId'</ee:set-variable>
+            </ee:variables>
+        </ee:transform>
+        <http:request method="PATCH" doc:name="Request" doc:id="db1e0fb5-edd8-468c-8444-674b056d9e48" path="${hr.path}/{empId}" config-ref="HTTP_hrSystem_configuration" sendCorrelationId="ALWAYS" correlationId="#[correlationId]">
+            <http:uri-params><![CDATA[#[output application/json
+---
+{
+	"empId":vars.empId
+}]]]></http:uri-params>
+        </http:request>
+        <ee:transform>
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "record updated successfully": null
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+    <flow name="get:\staff:hr-sapi-config">
+        <http:request method="GET" doc:name="Request" doc:id="788d9382-9ef6-4c71-b491-6c236c62ee69" config-ref="HTTP_hrSystem_configuration" path="${hr.path}" sendCorrelationId="ALWAYS" correlationId="#[correlationId]" />
+        <ee:transform>
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+[
+  {
+    empId: "1234",
+    firstName: "Test",
+    lastName: "T1",
+    emailAddress: "test.T1@abc.com",
+    role: "Developer",
+    activeFlag: "Y"
+  }, 
+  {
+    empId: "4321",
+    firstName: "Xyz",
+    lastName: "A1",
+    emailAddress: "Xyz.A1@abc.com",
+    role: "Developer",
+    activeFlag: "Y"
+  }
+]]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+    <flow name="post:\staff:application\json:hr-sapi-config">
+        <http:request method="POST" doc:name="Request" doc:id="59a10252-abd8-4d68-bf91-249aade773ac" config-ref="HTTP_hrSystem_configuration" path="${hr.path}">
+            <http:headers><![CDATA[#[output application/json
+---
+{
+	"role": attributes.headers.role
+}]]]></http:headers>
+        </http:request>
+        <ee:transform>
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+  "message": "record created successfully"
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+</mule>
